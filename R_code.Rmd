@@ -1,0 +1,668 @@
+---
+title: "A Juvenile-Adult Model with Fast Dispersal"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+
+Following the ideas of Reproducible Research, this R Markdown file with the R implementation of the model described in our paper .... Therefore, it contains the R code required to reproduce the computations supporting the paper. The final section of this document  contains some further details about the requirements of this code. 
+
+### Loading the required R libraries 
+
+
+The following code loads the required R libraries. If you need to install any of these libraries, please read the Section [Software Requirements and Test Results](#SoftwareRequirements) below. 
+
+```{r}
+rm(list=ls())
+library(Matrix)
+library(expm)
+````
+
+## Implementation of the aggregated system
+
+We consider an age structured population with two age classes:
+juvenile (immature) and adult (mature) individuals. The structured population is further
+assumed to be composed of two local populations coupled by dispersal.
+ We denote $J_{i}$ and  $A_{i}$, respectively, the densities of juveniles and adults in patch $i=1,2$. The population vector is thus:
+$$\vec{N}=\left(J_{1},J_{2},A_{1},A_{2}\right)^{T},$$
+where $T$ denotes transposition. We also use the following notation
+ $$
+J=J_{1}+J_{2},\qquad A=A_{1}+A_{2}, \qquad \vec{n}=(J,A)^T
+$$
+for the total number of juveniles and adults individuals. 
+
+The aggregated system (7) in the paper is 
+$$
+\vec{n}(t+1)\, = \,\mathcal L(\vec{n}(t))\,\vec{n}(t)
+$$
+Here $\vec n(t)$ is the vector giving the total number of juvenile and adults in the population at time $t$.  
+
+The matrix $L(\vec{n}(t))$ of the aggregated system is given by:
+
+$$
+{\cal L}(\vec{n}(t)) \, = \,
+ \left(
+   \begin{array}{cc}
+     0 & \bar \phi(\vec n(t)) \\ 
+    \bar \sigma_J & \bar \sigma_A \\
+   \end{array}
+ \right)\vec{n}(t)
+$$
+where:
+$$
+\begin{cases}
+\bar\phi(\vec n(t)) = \bar\phi(J,A)=\mu_A\phi_1(J,A)+ (1-\mu_A)\phi_2(J,A),\\[3mm]
+\bar \sigma_J=\mu_J\sigma_J^1+ (1-\mu_J)\sigma_J^2\\[3mm]
+\bar  \sigma_A= \mu_A\sigma_J^1+ (1-\mu_A)\sigma_J^2.
+\end{cases}
+$$
+
+Let us describe in detail the components entering this equations, and the way they are implemented here:
+
+#### Dispersal Rates
+Juvenile $p_i^J$ and adult $p_i^A$ dispersal rates **(that is, the fraction of individuals of each age class leaving patch $i$)** are supposed to be constant for $\, i=1 , 2$. For this example we take the following particular values:
+
+
+```{r DispersalRates}
+p1J = .4 
+p2J = .4
+p1A = .4
+p2A = .4
+```
+
+From these values we obtain  $\mu_J$ and $\mu_A$, the asymptotic distribution of juvenile and adult individuals at patch 1 due exclusively to dispersal: 
+
+$$\mu_J =\dfrac{p_2^J}{p_1^J + p_2^J}$$
+$$\mu_A =\dfrac{p_2^A}{p_1^A + p_2^A}$$
+
+This is implemented as follows:
+
+```{r AsymptoticDispersalMu}
+(muJ = p2J / (p1J + p2J))
+(muA = p2A / (p1A + p2A))
+```
+and both values are collected in a vector called `mu`.
+```{r}
+(mu = c(muJ, muA))
+```
+
+#### Survival Rates
+
+Juvenile and adult survival rates are given rexpectively by $\,\sigma_i^J, \sigma_i^A$ for $i=1, 2$. They are also considered to be constant in the model, and we take the following particular values:
+
+```{r survivalRatesSigma}
+sigmaJ1 = .2 
+sigmaJ2 = .75 
+sigmaA1 = .85 
+sigmaA2 = .3
+```
+
+Then the values of $\bar\sigma_J$ and $\bar\sigma_A$ are given by:
+```{r}
+barSigmaJ = function(mu)  sigmaJ1 * mu[1] + sigmaJ2 * (1 - mu[1])
+   
+barSigmaA = function(mu)  mu[2] * sigmaA1 + (1 - mu[2]) * sigmaA2
+```
+
+
+#### Fertility rates
+
+In this model, the fertility rates in both patches are given by functions $\,\phi_i\in C^1\left(\bar{\mathbb R}_+^2,\mathbb R_+\right)$ for $i=1, 2$. We consider three possible classes of fertility functions, as discussed in the paper. 
+
+For a concrete example of this construction, we will consider the following class C1 functions, for any choice of $\,a_1, a_2>0$:
+$$
+\begin{cases}
+\phi_1(J, A)=\psi_1\exp(-a_1(\mu_J J + \mu_A A) ) \\[3mm]
+\phi_2(J, A)=\psi_2\exp(-a_2((1 -\mu_J) J + (1 - \mu_A) A) )
+\end{cases}
+$$
+For the case of class C2 fertility functions we will use this concrete example:
+$$
+\begin{cases}
+\phi_1(J, A)=\psi_1\cdot (1 + \mu_J \mu_A J A) \exp(-a_1(\mu_J J + \mu_A A) ) \\[3mm]
+\phi_2(J, A)=\psi_2\cdot  (1 + (1 - \mu_J) (1 - \mu_A) J  A)   \exp(-a_2((1 -\mu_J) J + (1 - \mu_A) A) )
+\end{cases}
+$$
+And, finally, for the case of class C3 fertility functions we will use this concrete example:
+$$
+\begin{cases}
+\phi_1(J, A)=\psi_1\cdot (1 + \mu_A A) \exp(-a_1(\mu_J J + \mu_A A) ) \\[3mm]
+\phi_2(J, A)=\psi_2\cdot  (1 + (1 - \mu_A) A)   \exp(-a_2((1 -\mu_J) J + (1 - \mu_A) A) )
+\end{cases}
+$$
+The following code implements the above examples of fertility functions. The variables `phi1Class` and `phi2Class` can be used to select the fertility function class for each of the examples that we will examine:
+
+```{r fertilityFunctions}
+phi1 = function(J, A, psi1, mu, a){
+  if(phi1Class == 1){
+    psi1 * exp(-a[1] * (J * mu[1] + A * mu[2])) 
+  } else if(phi1Class == 2){
+    psi1 *(1 + J * mu[1] * A * mu[2]) * exp(- a[1] * (J * mu[1] + A * mu[2]))
+  } else if(phi1Class == 3){
+    psi1 * (1 + A * mu[2]) * exp(-a[1] * (J * mu[1] + A * mu[2]))   
+  }
+}
+
+
+phi2 = function(J, A, psi2, mu, a){
+  if(phi2Class == 1){
+    psi2 * exp(-a[2] * (J * (1 - mu[1]) +  A * (1 - mu[2]))) 
+  } else if(phi2Class == 2){
+    psi2 * (1 + J * (1 - mu[1]) * A * (1 - mu[2])) * exp(-a[2] * (J * (1 - mu[1]) + A * (1 - mu[2]))) 
+  } else if(phi2Class == 3){
+    psi2 * (1 + A * (1 - mu[2])) * exp(-a[2] * (J * (1 - mu[1]) + A * (1 - mu[2])))   
+  }
+}
+```
+
+Let us display the graph of the above defined fertility functions by defining sequentially 
+`phi1Class=1`, `phi1Class=2` and `phi1Class=3`. We first set 
+
+```{r}
+a = c(0.17, 0.1)
+```
+
+and plot the three surfaces, from left to right, C1, C2, C3:
+
+```{r graphFertilityFunctions_1_1_1, eval=FALSE}
+J = seq(0, 40, length.out = 30)
+A = seq(0, 40, length.out = 30)
+
+phi1Class=1
+z1 = outer(J, A, function(J, A){phi1(J, A, 50, mu, a)})
+phi1Class=2
+z2 = outer(J, A, function(J, A){phi1(J, A, 50, mu, a)})
+phi1Class=3
+z3 = outer(J, A, function(J, A){phi1(J, A, 50, mu, a)})
+theta0 = 30
+phi0 = 30
+par(mar=c(1, .1, 1, .1))
+par(mfrow = c(1, 3))
+persp(J, A, z1, theta = theta0, phi=phi0, col="lightgray", zlab="phi")
+persp(J, A, z2, theta = theta0, phi=phi0, col="lightgray", zlab="phi")
+persp(J, A, z3, theta = theta0, phi=phi0, col="lightgray", zlab="phi")
+par(mfrow = c(1, 1))
+```
+
+
+```{r echo=FALSE, fig.align='center', fig.width=8, fig.height=6}
+<<graphFertilityFunctions_1_1_1>>
+```
+
+
+
+
+We will use these examples to illustrate the results in the paper. If you wish to try a different choice of fertility functions, you need only to replace their definition in the preceding block of code.
+
+### The aggregated system matrix
+
+With the above ingredients we are ready to implement the elements of the aggregated system matrix $\ \mathcal L(\vec{n}(t))$. We begin with 
+$$\bar\phi(J,A) = \mu_A \phi_1(J,A) + (1-\mu_A) \phi_2(J,A)$$
+
+This is implemented as:
+```{r}
+barPhi = function(J, A, psi, mu, a){
+  mu[2] * phi1(J, A, psi[1], mu, a) + 
+  (1 - mu[2]) * phi2(J, A,  psi[2], mu, a)    
+}
+```
+
+The action of the aggregated system matrix on the vector $\,\vec n(t) = (J(t), A(t))^T$ is then described by the following code:
+
+```{r}
+RedSys = function(J, A, psi, mu,a){
+  return(c(A * barPhi(J, A, psi, mu, a),  
+           J * barSigmaJ(mu) + A * barSigmaA(mu)))
+}
+```
+
+### Iterations loop and bifurcation diagram for the aggregated system
+
+The goal of this code is to obtain a bifurcation diagram for this reduced system. In order to do this we will obtain a large number of iterations of the system. The initial iterations are then discarded and we plot the diagram using only the last ones. Thus, the total number of iterations is obtained as the sum as the number of initial, or *transient*, iterations plus the number of iterations that will appear in the plot. 
+
+The default numbers used in this example are $\,500$ transient iterations and $\,200$ plotted iterations, but these can be easily changed in the code below. 
+
+To obtain the diagram we will plot the total size of the population, given by the scalar
+$$n(t) = J(t) + A(t)$$
+against the values of the bifurcation parameter. In the following analysis we will consider two different bifurcation parameters, representing different choices of magnitudes that can be used to describe or manage the population dynamics:    
+
++ The *net reproductive number* $\nu$ **PUEDE HABER CAMBIADO** (see Equation (9), page 8 in the paper). Here we will consider a set of values of the net reproductive number parametrized by the coefficient $\psi_1$ of the fertility function $\phi_1$ as discussed before.
+ 
++ The *asymptotic distribution of juvenile individuals* at patch 1, that is, $\mu_J$. 
+
+Now, for each value of the bifurcation parameter we will get a set of iterates. Each column of the matrices $M_J$ and $M_a$ will contain, respectively, the iterates of $J$ and $A$ for a given value of the bifurcation parameter.
+
+We initialize the population values by setting the value of the first column of both $M_J$ and $M_A$. Again, we have selected $5$ juvenile and $5$ adult individuals as initial values, but these values can be easily changed in the code.  
+
+The iteration is carried out by two nested `for` loops. The iteration variables `r` and `c` indicate, respectively, the row and column of the matrices $M_J$ and $M_A$ being considered in each iteration. The result of each iteration of the inner loop is the vector $\vec n(t+1) = (J(t+1), A(t+1))$. After the inner loop is concluded, in the bifurcation parameter is the net 
+ net reproductive number, we use the values of $\,\psi_1$ and $\, \psi_2$ to obtain the value of  $\nu$ for that iteration of the outer loop. 
+
+After the iteration loops conclude, we get the total population number for  each value  of the bifurcation parameter simply by adding the matrices $M_J$ and $M_A$: 
+$$M_N = M_A + M_J$$
+We will, however, only use the final set of iterates. Therefore, we discard the initial or transient iterations when adding the matrices.
+
+Now, after the iteration loop concludes, we can simply plot the columns of matrix $\,M_N$ against the values of the bifurcation parameter $\nu$. The `matplot` function in R does precisely that.
+
+These operations are implemented in the `iterLoop` function below. 
+
+```{r eval=TRUE}
+iterLoop = function(transIter, plotIter, paramIter, 
+                    J0=5, A0=5, psi, mu, a){
+  
+  K = length(paramIter)
+  iterPerValue = transIter + plotIter
+  iterRange = 2:iterPerValue
+  
+  mJ = matrix(rep(0, as.integer(K * iterPerValue)), 
+              ncol= iterPerValue)
+  mA = matrix(rep(0, as.integer(K * iterPerValue)), 
+              ncol= iterPerValue)
+  
+  mA[ , 1] = J0
+  mJ[ , 1] = A0
+  
+  nu = numeric(K)
+  
+  for(r in 1:K){
+    for(c in iterRange){  
+      nextIter = RedSys(mJ[r, c-1], mA[r, c-1], psi[r, ], mu[r, ],a)  
+      mJ[r, c] = nextIter[1]
+      mA[r, c] = nextIter[2]
+      }  
+    nu[r] = barSigmaJ(mu[r, ]) * barPhi(0, 0, psi[r, ], mu[r, ], a) / 
+    (1 - barSigmaA(mu[r, ]))
+    }
+  
+  mN = mJ[, -(1:transIter)] + mA[, -(1:transIter)]
+  
+  results = list(nu, mN)
+  return(results)
+  
+}
+```
+
+
+## Using the net reproductive number as bifurcation parameter
+
+Now, we plot the bifurcation diagram in two different cases: either both fertility functions are of class C1 or fertility functions are of class C2.
+
+### Both fertility functions of class C1: supercritical bifurcation
+
+Let us begin by considering the fertility functions to be in class C1: 
+```{r}
+phi1Class = 1
+phi2Class = 1
+a = c(0.1, 0.2)
+```
+
+
+#### Bifurcation diagram in this case
+
+It can be calculated by simply calling the above defined funcion `iterLoop`. 
+Note that $\psi_1$ and $\psi_2$ are related as described before. 
+
+```{r}
+psi1 = seq(0, 30, by = 0.1)
+alpha = 0.5
+psi2 = alpha * psi1
+psi = cbind(psi1, psi2)
+
+
+muMatrix = cbind(rep(mu[1], length(psi1)), rep(mu[2], length(psi1)))
+
+iterations = iterLoop(transIter = 500, plotIter = 200, paramIter = psi1,  J0 = 5, A0 = 5, psi, a = c(0.1, 0.2), muMatrix)
+
+matplot(iterations[[1]], iterations[[2]], type="l", col="black", xlab="nu", ylab="Total population")
+```
+
+
+### Both fertility functions of class C2: subcritical bifurcation
+
+We first set the fertility functions so that $\phi_i$ belong to class C2 
+```{r}
+phi1Class = 2
+phi2Class = 2
+```
+
+#### Bifurcation diagram in this case
+
+Again, we use the above defined funcion `iterLoop`. 
+Note that $\psi_1$ and $\psi_2$ are related as described before. 
+
+```{r, echo = TRUE}
+a1 = .1
+a2 = .2
+a = c(a1, a2)
+
+psi1 = seq(0, 1.1, by = 0.01)
+alpha = 0.5
+psi2 = alpha * psi1
+psi=cbind(psi1,psi2)
+
+iterations = iterLoop(transIter = 500, plotIter = 200, paramIter = psi1,  J0 = 30, A0 = 30, psi, a = c(0.1, 0.2), muMatrix)
+
+matplot(iterations[[1]], iterations[[2]], type="l", col="black", xlab="nu", ylab="Total population")
+```
+
+## Persistence and dispersal
+
+The global net reproductive number depends on several parameter of the model and, in particular, 
+on the asymptotic distribution of juvenile and adult individuals, $\mu_J$ and $\mu_A$ respectively. In the following figures we  plot the global net reproductive as $\mu_J$ and $\mu_A$ vary 
+for different patches configurations. We first define a specific function to calculate $\nu$ for each 
+values of  $\mu_J$ and $\mu_A$. We consider two cases. symmetric dispersal  $\mu_A=\mu_J$ and 
+asymmetric dispersal  $\mu_A=1-\mu_J$
+
+```{r eval=TRUE}
+nuFunction=function(paramIter, psi, mu, a){
+  K = length(paramIter)
+  nu = numeric(K)
+  for(r in 1:K){ 
+    nu[r] = barSigmaJ(mu[r, ]) * barPhi(0, 0, psi, mu[r, ], a) / 
+    (1 - barSigmaA(mu[r, ]))
+    }
+    results = nu
+  return(results)
+}
+```
+
+that is a simplification of the already defined function `iterLoop`
+
+### Source-source patches
+
+We first choose an appropriate set of parameter values
+
+```{r}
+sigmaJ1 = .2 
+sigmaJ2 = .75 
+sigmaA1 = .75 
+sigmaA2 = .2
+
+a1 = .1
+a2 = .2
+a=c(a1,a2)
+
+psi1 = 2.25
+psi2 = 1.75
+psi=c(psi1,psi2)
+```
+
+and then plot the figure
+
+```{r eval=TRUE}
+muJ = seq(0, 1, by = .01) 
+muJin1=rep(1, times = length(muJ))
+nRnSymm=nuFunction(muJ, psi, cbind(muJ,muJ), a) 
+nRnAsymm=nuFunction(muJ, psi, cbind(muJ,1-muJ), a) 
+
+nu1 = nuFunction(muJin1, psi, cbind(muJin1,muJin1), a)
+nu2 = nuFunction(muJin1-1, psi, cbind(muJin1-1,muJin1-1), a)
+line1 = rep(1,times=length(muJ))
+
+
+par(mfrow = c(1,2), mar=c(5, 5, 1, 1))
+matplot(muJ, nRnSymm, type="l", lwd = 4, col="black", xlab="muJ, muA=muJ", ylab="nu", xlim=c(0,1), ylim=c(0,3))
+par(new=TRUE)
+matplot(muJ, nu1, type="l", lty=2, lwd = 3, col="darkgray", xlab = " ", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+par(new=TRUE)
+matplot(muJ, nu2, type="l", lty=3, lwd = 3, col="darkgray", xlab = " ", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+par(new=TRUE) 
+matplot(muJ, rep(1,times=length(muJ)), type="l", lwd = 2, col="gray", xlab = "", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+
+matplot(muJ, nRnAsymm, type="l", lwd = 4, col="black", xlab="muJ, muA=1-muJ", ylab="nu", xlim=c(0,1),  ylim=c(0,3))
+par(new=TRUE)
+matplot(muJ, nu1, type="l", lty=2, lwd = 3, col="darkgray", xlab = " ", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+par(new=TRUE)
+matplot(muJ, nu2, type="l", lty=3, lwd = 3, col="darkgray", xlab = " ", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+par(new=TRUE)
+matplot(muJ, rep(1,times=length(muJ)), type="l",  lwd = 2, col="gray", xlab = "", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+```
+
+```{r echo=TRUE}
+par(mfrow = c(1,1))
+```
+
+### Sink-sink patches
+
+Let us set appropriate parameter values
+
+```{r}
+sigmaJ1 = .3
+sigmaJ2 = .2 
+sigmaA1 = .2 
+sigmaA2 = .7
+
+a1 = .1
+a2 = .2
+a=c(a1,a2)
+
+psi1 = 1.5
+psi2 = 1.4
+psi=c(psi1,psi2)
+```
+
+and then we use the same code as before (although we do not display it twice) 
+to plot the corresponding figure
+
+
+```{r echo=FALSE}
+muJ = seq(0, 1, by = .01) 
+
+nRnSymm=nuFunction(muJ, psi, cbind(muJ,muJ), a) 
+nRnAsymm=nuFunction(muJ, psi, cbind(muJ,1-muJ), a) 
+
+nu1 = nuFunction(muJin1, psi, cbind(muJin1,muJin1), a)
+nu2 = nuFunction(muJin1-1, psi, cbind(muJin1-1,muJin1-1), a)
+line1 = rep(1,times=length(muJ))
+
+par(mfrow = c(1,2), mar=c(5, 5, 1, 1))
+matplot(muJ, nRnSymm, type="l", lwd = 4, col="black", xlab="muJ, muA=muJ", ylab="nu", xlim=c(0,1), ylim=c(0,3))
+par(new=TRUE)
+matplot(muJ, nu1, type="l", lty=2, lwd = 3, col="darkgray", xlab = " ", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+par(new=TRUE)
+matplot(muJ, nu2, type="l", lty=3, lwd = 3, col="darkgray", xlab = " ", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+par(new=TRUE) 
+matplot(muJ, rep(1,times=length(muJ)), type="l", lwd = 2, col="gray", xlab = "", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+
+matplot(muJ, nRnAsymm, type="l", lwd = 4, col="black", xlab="muJ, muA=1-muJ", ylab="nu", xlim=c(0,1),  ylim=c(0,3))
+par(new=TRUE)
+matplot(muJ, nu1, type="l", lty=2, lwd = 3, col="darkgray", xlab = " ", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+par(new=TRUE)
+matplot(muJ, nu2, type="l", lty=3, lwd = 3, col="darkgray", xlab = " ", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+par(new=TRUE)
+matplot(muJ, rep(1,times=length(muJ)), type="l",  lwd = 2, col="gray", xlab = "", ylab=" ", xlim=c(0,1), ylim=c(0,3))
+```
+
+```{r echo=FALSE}
+par(mfrow = c(1,1))
+```
+
+### Source-sink patches
+
+As mentioned in the manuscript, we do not focus on whether dispersal may lead the source-sink system to persist or not, since such a behavior is well known. Instead, we focus on whether the transition from persistence to extinction is linear or nonlinear. 
+
+We set parameter values such that patch 1 is a sink and patch 2 is a source. We first (left panel in the following figure) we assume that vital rates are  similar for each age class at both patches. Later, (right panel in the following figure) we assume the contrary.
+
+```{r}
+sigmaJ1=.52
+sigmaJ2=.48
+sigmaA1=.38
+sigmaA2=.41
+psi1=.6
+psi2=2.2
+psi=c(psi1,psi2)
+
+(psi1*sigmaJ1/(1-sigmaA1))
+(psi2*sigmaJ2/(1-sigmaA2))
+
+muJ = seq(0, 1, length.out = 21)
+muA = seq(0, 1, length.out = 21)
+nu = outer(muJ, muA, function(muJ,muA) nuFunction(muJ, psi,cbind(muJ,muA),a))
+
+par(mfrow = c(1,2), mar=c(3,3,1,1))
+
+persp(muJ, muA, nu, col = "lightgray", theta = 140, ticktype = 'detailed', nticks = 4)
+
+sigmaJ1=.3
+sigmaJ2=.8
+sigmaA1=.2
+sigmaA2=.7
+
+psi1*sigmaJ1/(1-sigmaA1)
+psi2*sigmaJ2/(1-sigmaA2)
+
+nu = outer(muJ, muA, function(muJ,muA) nuFunction(muJ, psi,cbind(muJ,muA),a))
+persp(muJ, muA, nu, col = "lightgray", theta = 140, ticktype = 'detailed', nticks = 4)
+par(mfrow = c(1,1))
+```
+
+
+## Stability and dispersal: the direction of bifurcation
+Following the storyline of the manusript, we display the code that allows to plot the direction of bifurcation 
+for different fertility functions. 
+
+
+We need to calculate the partial derivatives of $\bar \phi(J,A)$ ir order to compute 
+the direction of bifurcation. R is not a symbolic software, so that further work is needed; 
+that is why the following code becomes slightly more complicated. 
+
+Note that we take this oportunity to slightly redefine the fertility functions (that, of course,   keep the features of the corresponding classes they belong to). 
+
+#### Fertility functions of type C1 at patch 1 and and C2 at patch 2
+
+```{r}
+a1 = 1
+a2 = 1
+a = c(a1, a2)
+
+phi1C1 = expression( psi1 *4* exp(-a1 * (J * mu1 + A * mu2)))
+
+phi1C2 = expression( psi1 *(1 + J * mu1 + A * mu2) * exp(- a1 * (J * mu1 + A * mu2)))
+
+phi1C3 = expression( psi1 * (1 + A * mu2) * exp(-a1 * (J * mu1 + A * mu2)))
+
+phi2C1 = expression( psi2 * exp(-a2 * (J * (1 - mu1) +  A * (1 - mu2))))
+
+phi2C2 = expression( psi2 * (1 + 3*(J * (1 - mu1) + A * (1 - mu2))) * exp(-a2 * (J * (1 - mu1) + A * (1 - mu2))))
+
+phi2C3 = expression( psi2 * (1 + A * (1 - mu2)) * exp(-a2 * (J * (1 - mu1) + A * (1 - mu2))))
+
+coeff01 = expression(mu2)
+coeff02 = expression((1 - mu2))
+
+'%mult%' <- function(a,b) bquote(.(a) * .(b))
+'%add%' <- function(a,b) bquote(.(a) + .(b))
+
+first = "phi1C1"
+second = "phi2C2"
+
+callFirst = do.call(substitute, list(as.list(get(first))[[1]]))
+callSecond = do.call(substitute, list(as.list(get(second))[[1]]))
+callCoeff01 = do.call(substitute, list(as.list(coeff01)[[1]]))
+callCoeff02 = do.call(substitute, list(as.list(coeff02)[[1]]))
+
+expr_barPhi = (callCoeff01 %mult% callFirst) %add% (callCoeff02 %mult% callSecond)
+
+DbarPhiJ = D(expr_barPhi, "J")
+DbarPhiA = D(expr_barPhi, "A")
+
+barSigmaJexp = expression(-(sigmaJ1 * mu1 + sigmaJ2 * (1 - mu1)))
+callbarSigmaJ = do.call(substitute, list(as.list(barSigmaJexp)[[1]]))
+
+expK = callbarSigmaJ %mult% ((expr_barPhi %mult% DbarPhiJ) %add% DbarPhiA)
+
+K = function(sigmaJ1, sigmaJ2, mu1, mu2, psi1, psi2, a1, a2, J, A){}
+body(K) <- expK
+
+par(mfrow = c(1, 2))
+plotK = function(mu, alpha) K(sigmaJ1 = 0.75, sigmaJ2 = 0.75, mu1=mu, mu2=mu, psi1=2, psi2= 2+alpha, a1, a2, J=0, A=0)
+
+mu = seq(0, 1, length.out = 50)
+alpha = seq(-1, 1, length.out = 50)
+k3d = outer(mu, alpha, function(mu, alpha){plotK(mu, alpha)})
+
+theta0 = -50
+phi0 = 25
+
+persp(mu, alpha, k3d, theta = theta0, phi=phi0, ticktype = "detailed", zlab = "kappa")
+
+plotK = function(mu, alpha) K(sigmaJ1 = 0.75, sigmaJ2 = 0.75, mu1=mu, mu2=1-mu, psi1=2, psi2= 2+alpha, a1, a2, J=0, A=0)
+
+k3d2 = outer(mu, alpha, function(mu, alpha){plotK(mu, alpha)})
+persp(mu, alpha, k3d2, theta = theta0, phi=phi0, ticktype = "detailed", zlab = "kappa")
+```
+
+
+#### Fertility functions of type C3 at patch 1 and  at patch 2
+
+```{r}
+'%mult%' <- function(a,b) bquote(.(a) * .(b))
+'%add%' <- function(a,b) bquote(.(a) + .(b))
+
+first = "phi1C3"
+second = "phi2C3"
+
+callFirst = do.call(substitute, list(as.list(get(first))[[1]]))
+callSecond = do.call(substitute, list(as.list(get(second))[[1]]))
+callCoeff01 = do.call(substitute, list(as.list(coeff01)[[1]]))
+callCoeff02 = do.call(substitute, list(as.list(coeff02)[[1]]))
+
+expr_barPhi = (callCoeff01 %mult% callFirst) %add% (callCoeff02 %mult% callSecond)
+
+DbarPhiJ = D(expr_barPhi, "J")
+DbarPhiA = D(expr_barPhi, "A")
+
+barSigmaJexp = expression(-(sigmaJ1 * mu1 + sigmaJ2 * (1 - mu1)))
+callbarSigmaJ = do.call(substitute, list(as.list(barSigmaJexp)[[1]]))
+
+K = function(sigmaJ1, sigmaJ2, mu1, mu2, psi1, psi2, a1, a2, A, J){}
+body(K) <- expK
+
+par(mfrow = c(1, 2), mar=c(1,1,1,1))
+
+plotK = function(mu, alpha) K(sigmaJ1 = 0.75, sigmaJ2 = 0.75, mu1=mu, mu2=mu, psi1=2, psi2= 2+alpha, a1, a2, J=0, A=0)
+
+k3d = outer(mu, alpha, function(mu, alpha){plotK(mu, alpha)})
+persp(mu, alpha, k3d, theta = theta0, phi=phi0, ticktype = "detailed", zlab = "kappa")
+
+plotK = function(mu, alpha) K(sigmaJ1 = 0.75, sigmaJ2 = 0.75, mu1=mu, mu2=1-mu, psi1=2, psi2= 2+alpha, a1, a2, J=0, A=0)
+persp(mu, alpha, k3d2, theta = theta0, phi=phi0, ticktype = "detailed", zlab = "kappa")
+```
+
+
+
+#### Dispersal and bifurcation diagram when $\nu$ is close to doubling period threshold value
+It can be calculated by simply calling the above defined funcion `iterLoop`. 
+Note that $\psi_1$ and $\psi_2$ are now fixed values and the bifurcation parameter is $\nu_J$. In the left panel we assume
+
+```{r}
+phi1Class = 1
+phi2Class = 1
+
+sigmaJ1 = .2 
+sigmaJ2 = .6 
+sigmaA1 = .85 
+sigmaA2 = .3
+
+mu=seq(0, 1, by = 0.01)
+psi1 = rep(x=30, times = length(mu))
+alpha = .5
+psi2 = alpha * psi1
+
+psiMatrix = cbind(rep(psi1, length(mu)), rep(psi2, length(mu)))
+psi = cbind(psi1, psi2)
+
+par(mfrow = c(1, 2))
+
+muMatrix=cbind(mu, mu)
+iterations = iterLoop(transIter = 500, plotIter = 200, paramIter = mu,  
+                      J0 = 5, A0 = 5, psi, muMatrix, a = c(.17, .2))
+matplot(mu, iterations[[2]], type="l", col="black", xlab="nu", ylab="Total population")
+
+  
+muMatrix=cbind(mu, 1-mu)
+iterations = iterLoop(transIter = 500, plotIter = 200, paramIter = mu,  
+                      J0 = 5, A0 = 5, psi, muMatrix, a = c(.17, .2))
+matplot(mu, iterations[[2]], type="l", col="black", xlab="nu", ylab="Total population")
+```
