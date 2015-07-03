@@ -228,7 +228,7 @@ To obtain the diagram we will plot the total size of the population, given by th
 $$n(t) = J(t) + A(t)$$
 against the values of the bifurcation parameter. In the following analysis we will consider two different bifurcation parameters, representing different choices of magnitudes that can be used to describe or manage the population dynamics:    
 
-+ The *net reproductive number* $\nu$ **PUEDE HABER CAMBIADO** (see Equation (9), page 8 in the paper). Here we will consider a set of values of the net reproductive number parametrized by the coefficient $\psi_1$ of the fertility function $\phi_1$ as discussed before.
++ The *net reproductive number* $\nu$ (see Equation (9) in the paper). Here we will consider a set of values of the net reproductive number parametrized by the coefficient $\psi_1$ of the fertility function $\phi_1$ as discussed before.
  
 + The *asymptotic distribution of juvenile individuals* at patch 1, that is, $\mu_J$. 
 
@@ -302,7 +302,11 @@ a = c(0.1, 0.2)
 
 It can be calculated by simply calling the above defined funcion `iterLoop`. 
 Note that $\psi_1$ and $\psi_2$ are related as described before. 
-
+In particular, for each value of the 
+bifurcation parameter $\nu$ (varying in a suitable range) we have set up initial population sizes, 
+we have run 700 iterates of the aggregated model,  
+discarded the first 500 and plot the last 200. This procedure captures attractor sets. 
+This procedure captures attractor sets as equilibrium points, two-cycle,...
 ```{r}
 psi1 = seq(0, 30, by = 0.1)
 alpha = 0.5
@@ -329,22 +333,32 @@ phi2Class = 2
 #### Bifurcation diagram in this case
 
 Again, we use the above defined funcion `iterLoop`. 
-Note that $\psi_1$ and $\psi_2$ are related as described before. 
+Note that $\psi_1$ and $\psi_2$ are related as described before, and the bifurcation 
+diagram is calculated in the same way
 
 ```{r, echo = TRUE}
 a1 = .1
 a2 = .2
 a = c(a1, a2)
 
-psi1 = seq(0, 1.1, by = 0.01)
+psi1 = seq(0, 1.5, by = 0.01)
 alpha = 0.5
 psi2 = alpha * psi1
 psi=cbind(psi1,psi2)
 
 iterations = iterLoop(transIter = 500, plotIter = 200, paramIter = psi1,  J0 = 30, A0 = 30, psi, a = c(0.1, 0.2), muMatrix)
 
-matplot(iterations[[1]], iterations[[2]], type="l", col="black", xlab="nu", ylab="Total population")
+matplot(iterations[[1]], iterations[[2]], type="l", col="black", xlab="nu", ylab="Total population", xlim = c(0, 1.05))
 ```
+
+There is a numerical artifact (the vertical line) joining the branch of stable trivial equilibrium points 
+and the branch of stable positive equilibrium points. The bifurcation to positive equilibrium points that takes place 
+at $\nu=1$ is to unstable equilibrium points, and our code does not yield  
+unstable equilibrium points. This continuum of equilibrium points joints  $\, (1,0)$ and the point were the vertical line ends. At this point, a blue sky type bifurcation 
+happens and the backwards unstable branch turns to the right and becomes stable. We have not calculated the branch of 
+ unstable equilibrium points, since its precise shape is not relevant 
+ to our problem. In the manuscript, we have edited the corresponding figure 
+ as described there.
 
 ## Persistence and dispersal
 
