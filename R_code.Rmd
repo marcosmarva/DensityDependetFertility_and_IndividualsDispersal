@@ -645,6 +645,13 @@ persp(mu, alpha, k3d2, theta = theta0, phi=phi0, ticktype = "detailed", zlab = "
 ```
 
 
+### Further effects on the population size and (de)stabilization phenomena.
+
+Producing Figure 8 in the manuscript requiers of aslightly different definition 
+of the R functions defined before. For the sake of simplicity we have decided do not 
+include the corresponding code in this document. The interested reader can 
+found the code in a plain R script (named figure8code.R) in https://github.com/marcosmarva/DensityDependetFertility_and_IndividualsDispersal.
+
 
 #### Dispersal and bifurcation diagram when $\nu$ is close to doubling period threshold value
 It can be calculated by simply calling the above defined funcion `iterLoop`. 
