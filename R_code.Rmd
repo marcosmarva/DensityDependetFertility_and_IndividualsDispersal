@@ -53,7 +53,7 @@ $$
 where:
 $$
 \begin{cases}
-\bar\phi(\vec n(t)) = \bar\phi(J,A)=\mu_A\phi_1(J,A)+ (1-\mu_A)\phi_2(J,A),\\[3mm]
+\bar\phi(\vec n(t)) = \bar\phi(J,A)=\mu_A\phi_1(\mu_JJ,\mu_AA)+ (1-\mu_A)\phi_2((1-\mu_J)J,(1-\mu_A)A),\\[3mm]
 \bar \sigma_J=\mu_J\sigma_J^1+ (1-\mu_J)\sigma_J^2\\[3mm]
 \bar  \sigma_A= \mu_A\sigma_J^1+ (1-\mu_A)\sigma_J^2.
 \end{cases}
@@ -66,10 +66,10 @@ Juvenile $p_i^J$ and adult $p_i^A$ dispersal rates **(that is, the fraction of i
 
 
 ```{r DispersalRates}
-p1J = .4
+p1J = .2
 p2J = .4
-p1A = .4
-p2A = .4
+p1A = .6
+p2A = .3
 ```
 
 From these values we obtain  $\mu_J$ and $\mu_A$, the asymptotic distribution of juvenile and adult individuals at patch 1 due exclusively to dispersal: 
@@ -86,6 +86,13 @@ This is implemented as follows:
 and both values are collected in a vector called `mu`.
 ```{r}
 (mu = c(muJ, muA))
+```
+
+Let us reset 
+```{r}
+muJ = .5 
+muA = .5
+mu = c(muJ, muA)
 ```
 
 #### Survival Rates
@@ -111,27 +118,29 @@ barSigmaA = function(mu)  mu[2] * sigmaA1 + (1 - mu[2]) * sigmaA2
 
 In this model, the fertility rates in both patches are given by functions $\,\phi_i\in C^1\left(\bar{\mathbb R}_+^2,\mathbb R_+\right)$ for $i=1, 2$. We consider three possible classes of fertility functions, as discussed in the paper. 
 
-For a concrete example of this construction, we will consider the following class C1 functions, for any choice of $\,a_1, a_2>0$:
+For a concrete example of this construction, we will consider the following class C1 functions, for any choice of $\,a_J, a_A>0$:
 $$
 \begin{cases}
-\phi_1(J, A)=\psi_1\exp(-a_1(\mu_J J + \mu_A A) ) \\[3mm]
-\phi_2(J, A)=\psi_2\exp(-a_2((1 -\mu_J) J + (1 - \mu_A) A) )
+\phi(J, A)=\psi\exp(-a_J J - a_A A) )
 \end{cases}
 $$
 For the case of class C2 fertility functions we will use this concrete example:
 $$
 \begin{cases}
-\phi_1(J, A)=\psi_1\cdot (1 + \mu_J \mu_A J A) \exp(-a_1(\mu_J J + \mu_A A) ) \\[3mm]
-\phi_2(J, A)=\psi_2\cdot  (1 + (1 - \mu_J) (1 - \mu_A) J  A)   \exp(-a_2((1 -\mu_J) J + (1 - \mu_A) A) )
+\phi(J, A)=\psi\cdot (1 + J A) \exp(-a_J J - a_A A ) 
 \end{cases}
 $$
 And, finally, for the case of class C3 fertility functions we will use this concrete example:
 $$
 \begin{cases}
-\phi_1(J, A)=\psi_1\cdot (1 + \mu_A A) \exp(-a_1(\mu_J J + \mu_A A) ) \\[3mm]
-\phi_2(J, A)=\psi_2\cdot  (1 + (1 - \mu_A) A)   \exp(-a_2((1 -\mu_J) J + (1 - \mu_A) A) )
+\phi(J, A)=\psi\cdot (1 + A) \exp(-a_J J -a_A A ) 
 \end{cases}
 $$
+
+Let us recall that:  
+  * We assume $a_J = a_A$ to keep simulations simpler.
+  * In the expression of the aggregated system given by ${\cal L}(\vec{n}(t))$ $\phi$ depends on $J$, $A$ as well as in $\mu_J, \mu_A$.
+
 The following code implements the above examples of fertility functions. The variables `phi1Class` and `phi2Class` can be used to select the fertility function class for each of the examples that we will examine:
 
 ```{r fertilityFunctions}
@@ -178,14 +187,14 @@ phi1Class=3
 z3 = outer(J, A, function(J, A){phi1(J, A, 50, mu, a)})
 theta0 = 30
 phi0 = 30
-par(mar=c(1, 1, 1, .1))
+par(mar=c(1, 2, 1, .1))
 par(mfrow = c(1, 3))
 persp(J, A, z1, theta = theta0, phi=phi0, cex.lab = 1.5,col="lightgray", 
-      xlab="\n\nA", ylab="\n\nJ", zlab="\n\nphi")
+      xlab="\n\nJ", ylab="\n\nA", zlab="\n\nphi")
 persp(J, A, z2, theta = theta0, phi=phi0, cex.lab = 1.5,col="lightgray", 
-       xlab="\n\nA", ylab="\n\nJ", zlab="\n\nphi")
+       xlab="\n\nJ", ylab="\n\nA", zlab="\n\nphi")
 persp(J, A, z3, theta = theta0, phi=phi0, cex.lab = 1.5,col="lightgray", 
-      xlab="\n\nA", ylab="\n\nJ", zlab="\n\nphi")
+      xlab="\n\nJ", ylab="\n\nA", zlab="\n\nphi")
 par(mfrow = c(1, 1))
 ```
 
@@ -202,7 +211,7 @@ We will use these examples to illustrate the results in the paper. If you wish t
 ### The aggregated system matrix
 
 With the above ingredients we are ready to implement the elements of the aggregated system matrix $\ \mathcal L(\vec{n}(t))$. We begin with 
-$$\bar\phi(J,A) = \mu_A \phi_1(J,A) + (1-\mu_A) \phi_2(J,A)$$
+$$\bar\phi(J,A) = \mu_A \phi_1(\mu_JJ,\mu_AA) + (1-\mu_A) \phi_2((1-\mu_J)J,(1-\mu_A)A)$$
 
 This is implemented as:
 ```{r}
@@ -689,7 +698,7 @@ found the code in a plain R script (named figure8code.R) in https://github.com/m
 
 #### Dispersal and bifurcation diagram when $\nu$ is close to doubling period threshold value
 It can be calculated by simply calling the above defined funcion `iterLoop`. 
-Note that $\psi_1$ and $\psi_2$ are now fixed values and the bifurcation parameter is $\nu_J$. In the left panel we assume
+Note that $\psi_1$ and $\psi_2$ are now fixed values and the bifurcation parameter is $\mu_J$. In the left panel we assume
 
 ```{r}
 phi1Class = 1
@@ -713,11 +722,11 @@ par(mfrow = c(1, 2))
 muMatrix=cbind(mu, mu)
 iterations = iterLoop(transIter = 500, plotIter = 200, paramIter = mu,  
                       J0 = 5, A0 = 5, psi, muMatrix, a = c(.17, .2))
-matplot(mu, iterations[[2]], type="l", col="black", xlab="nu", ylab="Total population")
+matplot(mu, iterations[[2]], type="l", col="black", xlab="muJ", ylab="Total population")
 
   
 muMatrix=cbind(mu, 1-mu)
 iterations = iterLoop(transIter = 500, plotIter = 200, paramIter = mu,  
                       J0 = 5, A0 = 5, psi, muMatrix, a = c(.17, .2))
-matplot(mu, iterations[[2]], type="l", col="black", xlab="nu", ylab="Total population")
+matplot(mu, iterations[[2]], type="l", col="black", xlab="muJ", ylab="Total population")
 ```
